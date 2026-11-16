@@ -121,21 +121,33 @@
     const resolvedImages = {};
     let shuffledQuiz = [];
 
-    async function loadCollection() {
-      try {
-        const response = await fetch(API_URL, {
-          method: 'GET',
-          redirect: 'follow'
-        });
-        const result = await response.json();
-        if (result.error) throw new Error(result.error);
+    async     function loadCollection() {
+      const callbackName = 'jsonp_init_' + Date.now();
+      const script = document.createElement('script');
+
+      window[callbackName] = function(result) {
+        delete window[callbackName];
+        script.remove();
+        if (result.error) {
+          document.getElementById('mainContent').innerHTML =
+            '<div class="loading-state" style="color:var(--danger);">Error loading collection: ' + escapeHtml(result.error) + '</div>';
+          return;
+        }
         data = result;
         init();
-      } catch (err) {
+      };
+
+      script.onerror = function() {
+        delete window[callbackName];
+        script.remove();
         document.getElementById('mainContent').innerHTML =
-          '<div class="loading-state" style="color:var(--danger);">Error loading collection: ' + escapeHtml(err.message) + '</div>';
-      }
+          '<div class="loading-state" style="color:var(--danger);">Error: Could not reach Google Apps Script. Verify deployment is set to "Anyone".</div>';
+      };
+
+      script.src = API_URL + '?callback=' + callbackName;
+      document.body.appendChild(script);
     }
+
 
     function init() {
       const nav = document.getElementById('roomNav');
@@ -340,7 +352,7 @@
       banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function handleImageFallback(art, imgEl, attempt) {
+        function handleImageFallback(art, imgEl, attempt) {
       if (attempt === 1 && art.altDriveUrl) {
         imgEl.onerror = () => handleImageFallback(art, imgEl, 2);
         imgEl.src = art.altDriveUrl;
@@ -349,21 +361,27 @@
 
       if (art.driveFileId) {
         imgEl.onerror = null;
-        fetch(API_URL + '?imgId=' + encodeURIComponent(art.driveFileId))
-          .then(res => res.json())
-          .then(res => {
-            if (res.dataUri) {
-              resolvedImages[art.index] = res.dataUri;
-              imgEl.src = res.dataUri;
-              const modalImg = document.getElementById('modalImg');
-              if (modalImg && modalImg.dataset.activeIndex == art.index) {
-                modalImg.src = res.dataUri;
-              }
+        const cbName = 'jsonp_img_' + art.index + '_' + Date.now();
+        const script = document.createElement('script');
+
+        window[cbName] = function(res) {
+          delete window[cbName];
+          script.remove();
+          if (res && res.dataUri) {
+            resolvedImages[art.index] = res.dataUri;
+            imgEl.src = res.dataUri;
+            const modalImg = document.getElementById('modalImg');
+            if (modalImg && modalImg.dataset.activeIndex == art.index) {
+              modalImg.src = res.dataUri;
             }
-          })
-          .catch(() => {});
+          }
+        };
+
+        script.src = API_URL + '?imgId=' + encodeURIComponent(art.driveFileId) + '&callback=' + cbName;
+        document.body.appendChild(script);
       }
     }
+
 
     function openModal(art) {
       const modalImg = document.getElementById('modalImg');
